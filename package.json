@@ -1,0 +1,15 @@
+{
+  "name": "processing-test",
+  "version": "1.0.0",
+  "description": "test turf functionality to create a isoline map of mosaic",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Daveism",
+  "license": "ISC",
+  "dependencies": {
+    "gdal": "^0.8.0",
+    "turf": "^2.0.2"
+  }
+}
