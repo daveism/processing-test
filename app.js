@@ -4,7 +4,7 @@ var fs = require('fs');
 var turf = require('turf');
 
 //import data
-var dataset = gdal.open("../test_mosiac/southeast_mosaic_ndvi.tif");
+var dataset = gdal.open("../test_mosiac/southeast_mosaic_ndmi.tif");
 
 //get extent of change mosaic
 var geoTransform = dataset.geoTransform
@@ -31,7 +31,7 @@ var band = bands.get(1);
 var pixels = band.pixels;
 
 //create hexagon grid
-var cellWidth = 50;
+var cellWidth = 25;
 var units = 'kilometers';
 var hexgrid = turf.hexGrid(bbox, cellWidth, units);
 
@@ -167,5 +167,5 @@ fs.writeFileSync('./hexgridvalues.geojson', JSON.stringify(aggregated))
 var breaks = turf.jenks(fc, 'value', 20);
 
 //create isolines
-var isolined = turf.isolines(fc, 'value', 15, breaks);
+var isolined = turf.isolines(fc, 'value', 10, breaks);
 fs.writeFileSync('./isolines.geojson', JSON.stringify(isolined));
