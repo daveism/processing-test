@@ -12,8 +12,8 @@ function createBinaryString (nMask) {
 
 
 //import data
-var datasetOne = gdal.open("../Downloads/LC80180352015250LGN00/LC80180352015250LGN00_BQA.TIF");
-var datasetTwo = gdal.open("../Downloads/LC80180352015250LGN00/LC80180352015250LGN00_BQA.TIF");
+var datasetOne = gdal.open("../Downloads/LC80180352015330LGN02/LC80180352015330LGN02_BQA.TIF");
+var datasetTwo = gdal.open("../Downloads/LC80180352015330LGN02/LC80180352015330LGN02_BQA.TIF");
 
 
 var wrs2 = fs.readFileSync("wrs2codes.geojson");
@@ -42,7 +42,7 @@ var poly = turf.bboxPolygon(bbox);
 fs.writeFileSync('./poly.geojson', JSON.stringify(poly));
 
 //get a set of random points
-var points = turf.random('points', 10000, {bbox: bbox});
+var points = turf.random('points', 100000, {bbox: bbox});
 fs.writeFileSync('./points.geojson', JSON.stringify(points));
 
 //points = turf.pointGrid( bbox,50,'kilometers');
@@ -103,7 +103,6 @@ for(var i = 0; i < points.features.length; i++) {
 
     if(valOne){
       var base =  createBinaryString(valOne)//valOne.toString(2) //createBinaryString(valOne); //(valTwo - valOne) / (valTwo + valOne)
-      console.log(base)
       if(base[0] ){
         bits = base[0]
       }else{
@@ -169,13 +168,14 @@ for(var i = 0; i < points.features.length; i++) {
       ndvi = 1
     }
   }
-console.log(ndvi)
         //if(ndvi===null){ndvi=0};
     //f (val>0){
     //create a new point with a property (attribute) of the change value
-    var pt = turf.point([x,y], {valueOne: valOne,valueTwo: valTwo,ndvi: ndvi});
-    //add new point to new feature
-    features.push(pt);
+    if(ndvi===0){
+      var pt = turf.point([x,y], {valueOne: valOne,valueTwo: valTwo,ndvi: ndvi});
+      //add new point to new feature
+      features.push(pt);
+   }
     //}
     //console.log( parseFloat(((i+1)/Object.keys(hexgrid.features).length)*10).toFixed(2) )
  }
