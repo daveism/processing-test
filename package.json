@@ -9,6 +9,7 @@
   "author": "Daveism",
   "license": "ISC",
   "dependencies": {
+    "commander": "^2.9.0",
     "gdal": "^0.8.0",
     "turf": "^2.0.2",
     "turf-isobands": "^1.0.4"
