@@ -527,45 +527,42 @@ for(var i = 0; i < points.features.length; i++) {
 
     }
 
-  //var properties = {id:i,value:value,ndvi:ndvi,ndmi:ndmi,swir:swir,cloud:cloud,shadow:shadow,water:water,
-  //dropped:dropped,vegetation:vegetation};
- var properties = {
-   //id:i,
-   //x:x,
-   //y:y,
-   //qa:cloudValue,
-   nir:nirValue,
-   swir1:swir1Value,
-   swir2:swir2Value,
-   //tir1:tir1Value,
-   //tir2:tir2Value,
-   red:redValue,
-   green:greenValue,
-   blue:blueValue,
-   rgb:'(' + (redValue/255).toFixed(0) + ',' + (blueValue/255).toFixed(0) + ',' +  (greenValue/255).toFixed(0) + ')',
-   cloud:cloudVal,
-   shadow:shadowVal,
-   water:waterVal,
-   vegetation:vegetationVal,
-   dropped:droppedVal,
-   swir:parseFloat((swir*100).toFixed(2)),
-   ndmi:parseFloat((ndmi*100).toFixed(2)),
-   ndvi:parseFloat((ndvi*100).toFixed(2))
- }
-        //if(ndvi===null){ndvi=0};
+    var properties = {
+      //id:i,
+      //x:x,
+      //y:y,
+      //qa:cloudValue,
+      nir:nirValue,
+      swir1:swir1Value,
+      swir2:swir2Value,
+      //tir1:tir1Value,
+      //tir2:tir2Value,
+      red:redValue,
+      green:greenValue,
+      blue:blueValue,
+      rgb:'(' + (redValue/255).toFixed(0) + ',' + (blueValue/255).toFixed(0) + ',' +  (greenValue/255).toFixed(0) + ')',
+      cloud:cloudVal,
+      shadow:shadowVal,
+      water:waterVal,
+      vegetation:vegetationVal,
+      dropped:droppedVal,
+      swir:parseFloat((swir*100).toFixed(2)),
+      ndmi:parseFloat((ndmi*100).toFixed(2)),
+      ndvi:parseFloat((ndvi*100).toFixed(2))
+    }
     if (cloudVal === 0){
-    //create a new point with a property (attribute) of the change value
-    //if(ndvi===0){
+      //create a new point with a property (attribute) of the change value
       var pt = turf.point([x,y], properties);
+
       //add new point to new feature
       features.push(pt);
-   //}
   }
-    //console.log( parseFloat(((i+1)/Object.keys(hexgrid.features).length)*10).toFixed(2) )
  }
+
  percentComplete = ((i/points.features.length)*100).toFixed(0);
  if(percentCompleteLast != percentComplete){
-    console.log('  values completed: ' + percentComplete  + '% ');
+    //console.log('  values completed: ' + percentComplete  + '% ');
+    process.stdout.write("  values completed: " + percentComplete  + "% \r");
     percentCompleteLast = percentComplete;
  }
 
