@@ -573,18 +573,19 @@ var fc = turf.featurecollection(features);
 writeFile (outdirectory,sceneid,'points_withvalues',fc);
 
 //run statistics
+console.log();
 console.log('Generating statistics');
 var aggregations = '';
 
-console.log(' Grid NDMI');
+console.log('  Grid NDMI');
 aggregations = setAggreations('ndmi')
 var ndmi_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
-console.log(' Grid NDVI');
+console.log('  Grid NDVI');
 aggregations = setAggreations('ndvi')
 var ndvi_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
-console.log(' Grid SWIR');
+console.log('  Grid SWIR');
 aggregations = setAggreations('swir')
 var swir_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
