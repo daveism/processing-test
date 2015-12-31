@@ -11,9 +11,9 @@ program
     .version('0.0.1')
     .usage('[options] ')
     .option('-s, --sceneid <string>', 'Sceneid for landsat 8', String)
-    .option('-z, --gridsize <float>', 'Size of hexgrid in Kilometers', parseFloat)
-    .option('-p, --numberpoints <int>', 'Size of hexgrid in Kilometers', parseInt)
-    .option('-t, --statfield <String>', 'set the field to calculate statistics for', String)
+    .option('-z, --gridsize <float>', 'Size of grid in Kilometers', parseFloat)
+    .option('-p, --numberpoints <int>', 'Size of grid in Kilometers', parseInt)
+    .option('-g, --gridtype <String>', 'set the grid type [hex,box]', String)
     .option('-i, --indirectory <String>', 'Directory containing scene data', String)
     .option('-o, --outdirectory <String>', 'Directory for all output', String)
     .parse(process.argv);
@@ -26,16 +26,16 @@ var indirectory = program.indirectory;
 var numberpoints = program.numberpoints;
 var gridsize = program.gridsize;
 var outdirectory = program.outdirectory;
-var statfield = program.statfield;
+var gridtype = program.gridtype;
 
 var gridUnits = 'kilometers';
 
 var useCenter = false;
 
-//set user hexgrid centroid if number of po
-// if(numberpoints===0){
-//   useCenter = true;
-// }
+//set user grid centroid if number of po
+if(numberpoints===0){
+   useCenter = true;
+}
 
 //get band to append to scene name.  - i.e. cloud == _BQA , nir = _B5
 //this is what is appended to the secene name in the in directory.
@@ -154,18 +154,30 @@ var transformPt = function(dataset,x,y){
 }
 
 //use gdal to get value of pixel at a Coordinate
-var getPixelValue = function(dataset,x,y){
+var getPixelValue = function(dataset,pixels,x,y){
 
   //transform wgs84 point to pixel location
   var ptnew = transformPt(dataset,x,y)
 
   //get change value of point
-  var pixels = getGDALPixels(dataset)
+  //var pixels = getGDALPixels(dataset)
   var value = pixels.get(ptnew.x,ptnew.y);
 
   return value;
 }
 
+var getCenterPts = function(grid){
+  var pts = [];
+  for(var i = 0; i < grid.features.length; i++) {
+    var gridFeature = grid.features[i].geometry;
+    gridFC = turf.featurecollection(gridFeature);
+    pt = turf.centroid(gridFeature);
+    //console.log(gridFC);
+    pts.push(pt);
+  }
+  pts = turf.featurecollection(pts);
+  return pts;
+}
 
 var setAggreations = function(statisticsField){
   //setup statistics for points in grid
@@ -204,6 +216,25 @@ var setAggreations = function(statisticsField){
       aggregation: 'variance',
       inField: statisticsField,
       outField: 'variance'
+    },
+    {
+      aggregation: 'count',
+      inField: '',
+      outField: 'count'
+    }
+  ];
+
+  return aggregations;
+
+}
+
+var setAggreationsCenter = function(statisticsField){
+  //setup statistics for points in grid
+  var aggregations = [
+    {
+      aggregation: 'sum',
+      inField: statisticsField,
+      outField: 'sum'
     },
     {
       aggregation: 'count',
@@ -262,7 +293,83 @@ var fixNulls = function(data){
   return data;
 }
 
+//check conidition of binary data
+var checkCondition = function(binary){
+   var condition = false;
 
+   switch (binary) {
+     case "10":
+       condition = true;
+       break;
+     case "11":
+       condition = true;
+       break;
+    case "01":
+       condition = false;
+       break;
+    case "01":
+       condition = false;
+       break;
+    case "0":
+       condition = false;
+       break;
+    case "1":
+       condition = true;
+       break;
+     default:
+     condition = false;
+   }
+
+
+   return condition;
+}
+
+var gitBinaryType = function(binary,type){
+  var newBinary = 0;
+
+  switch (type) {
+    case "cloud":
+      newBinary = binary.substr(0,2);
+      break;
+    case "cirrus":
+      newBinary = binary.substr(2,2);
+      break;
+   case "snow":
+      newBinary = binary.substr(4,2);
+      break;
+   case "vegetation":
+      newBinary = binary.substr(6,2);
+      break;
+   case "shadow":
+      newBinary = binary.substr(8,2);
+      break;
+   case "water":
+      newBinary = binary.substr(10,2);
+      break;
+   case "reserved":
+      newBinary = binary.substr(12,1);
+      break;
+   case "terrian":
+      newBinary = binary.substr(13,1);
+      break;
+   case "dropped":
+      newBinary = binary.substr(14,1);
+      break;
+   case "designated":
+      newBinary = binary.substr(15,1);
+      break;
+    default:
+    newBinary = 0;
+  }
+
+
+  return newBinary;
+
+
+
+
+
+}
 //get GDAL dataset for bands
 var cloudDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('cloud') + ".TIF");
 var nirDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('nir') + ".TIF");
@@ -276,17 +383,18 @@ var blueDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBand
 
 //get pixes for raster data
 //needed for value
-// var cloudPixels = getGDALPixels(cloudDS);
-// var nirPixels = getGDALPixels(nirDS);
-// var swir1Pixels = getGDALPixels(swir1DS);
-// var swir2Pixels = getGDALPixels(swir2DS);
-// var tir1Pixels = getGDALPixels(tir1DS);
-// var tir2Pixels = getGDALPixels(tir2DS);
-// var redPixels = getGDALPixels(redDS);
-// var greenPixels = getGDALPixels(greenDS);
-// var bluePixels = getGDALPixels(blueDS);
+var cloudPixels = getGDALPixels(cloudDS);
+var nirPixels = getGDALPixels(nirDS);
+var swir1Pixels = getGDALPixels(swir1DS);
+var swir2Pixels = getGDALPixels(swir2DS);
+var tir1Pixels = getGDALPixels(tir1DS);
+var tir2Pixels = getGDALPixels(tir2DS);
+var redPixels = getGDALPixels(redDS);
+var greenPixels = getGDALPixels(greenDS);
+var bluePixels = getGDALPixels(blueDS);
 
 //get the geojson for all scenes...
+console.log('Getting Scene info');
 var wrs2 = fs.readFileSync("wrs2codes.geojson");
 wrs2 = JSON.parse(wrs2);
 
@@ -305,25 +413,37 @@ var datasetPoly = turf.bboxPolygon(bbox);
 var poly = turf.bboxPolygon(bbox);
 writeFile (outdirectory,sceneid,'poly',poly);
 
-//get a set of random points
-var points = turf.random('points', numberpoints, {bbox: bbox});
-writeFile (outdirectory,sceneid,'points',points);
-
-//create hexagon grid
-var hexgrid = turf.hexGrid(bbox, gridsize, gridUnits);
-var boxgrid = turf.squareGrid(bbox, gridsize, gridUnits);
+//create grid
+var grid_GeoJSON;
+console.log('Creating Grids');
+if(gridtype==='box'){
+  grid_GeoJSON = turf.squareGrid(bbox, gridsize, gridUnits);
+}else{
+  grid_GeoJSON = turf.hexGrid(bbox, gridsize, gridUnits);
+}
+//
 
 //add statistics fields
-hexgrid = addSatisticFields(hexgrid);
-boxgrid =  addSatisticFields(boxgrid);
+grid_GeoJSON = addSatisticFields(grid_GeoJSON);
 
 //write the grids without values populated
-writeFile (outdirectory,sceneid,'hexgrid',hexgrid);
-writeFile (outdirectory,sceneid,'boxgrid',boxgrid);
+writeFile (outdirectory,sceneid,'grid',grid_GeoJSON);
+
+console.log('Getting Points');
+if(useCenter){
+  var points = getCenterPts(grid_GeoJSON);
+}else{
+  //get a set of random points
+  var points = turf.random('points', numberpoints, {bbox: bbox});
+}
+
+writeFile (outdirectory,sceneid,'points',points);
 
 //ceate an empty features array for inserting new points
 var features = [];
 
+var percentComplete = 0;
+var percentCompleteLast = 0;
 //loop points to get change value at each random point
 console.log('Getting change value');
 for(var i = 0; i < points.features.length; i++) {
@@ -335,15 +455,15 @@ for(var i = 0; i < points.features.length; i++) {
    if( turf.inside(tmpPT, wrs2Scene.features[0])){
 
     //get pixel values for bands
-    var cloudValue = getPixelValue(cloudDS,x,y)
-    var nirValue = getPixelValue(nirDS,x,y)
-    var swir1Value = getPixelValue(swir1DS,x,y);
-    var swir2Value = getPixelValue(swir2DS,x,y);
-    var tir1Value = getPixelValue(tir1DS,x,y);
-    var tir2Value = getPixelValue(tir2DS,x,y);
-    var redValue = getPixelValue(redDS,x,y)
-    var greenValue = getPixelValue(greenDS,x,y);
-    var blueValue = getPixelValue(blueDS,x,y);
+    var cloudValue = getPixelValue(cloudDS,cloudPixels,x,y)
+    var nirValue = getPixelValue(nirDS,nirPixels,x,y)
+    var swir1Value = getPixelValue(swir1DS,swir1Pixels,x,y);
+    var swir2Value = getPixelValue(swir2DS,swir2Pixels,x,y);
+    //var tir1Value = getPixelValue(tir1DS,tir1Pixels,x,y);
+    //var tir2Value = getPixelValue(tir2DS,tir2Pixels,x,y);
+    var redValue = getPixelValue(redDS,redPixels,x,y)
+    var greenValue = getPixelValue(greenDS,greenPixels,x,y);
+    var blueValue = getPixelValue(blueDS,bluePixels,x,y);
 
     //calc ndvi
     var ndvi = (nirValue - redValue) / (nirValue + redValue);
@@ -351,101 +471,86 @@ for(var i = 0; i < points.features.length; i++) {
     //calc ndmi
     var ndmi = (nirValue - swir1Value) / (nirValue + swir1Value);
 
-    //calc swir 
+    //calc swir
     var swir =  (swir2Value -  swir1Value) / Math.abs(swir1Value)
 
     var cloudVal = 0;
+    var waterVal = 0;
+    var shadowVal = 0;
+    var vegetationVal = 0;
+    var droppedVal = 0;
     var bits = "";
     var isCloud = false;
     var isCirrus = false;
 
     if(cloudValue){
       var base =  createBinaryString(cloudValue)
-      //valOne.toString(2) //createBinaryString(valOne); //(valTwo - valOne) / (valTwo + valOne)
-      if(base[0] ){
-        bits = base[0]
-      }else{
-        bits = "0"
+      cloudValue = base;
+
+      bits = gitBinaryType(base,'cloud')
+      isCloud = checkCondition(bits);
+
+      bits = gitBinaryType (base,'cirrus')
+      isCirrus = checkCondition(bits);
+
+      if(isCloud){
+        cloudVal = 1
+      }
+      if(isCirrus){
+        cloudVal = 1
       }
 
-      if(base[1]){
-        bits = bits + base[1]
-      }else{
-        bits = bits + "0"
+      bits = gitBinaryType(base,'water')
+      isWater = checkCondition(bits);
+      if(isWater){
+        waterVal = 1
       }
 
-      switch (bits) {
-        case "10":
-          isCloud = true;
-          break;
-        case "11":
-          isCloud = true;
-          break;
-       case "01":
-          isCloud = false;
-          break;
-       case "01":
-          isCloud = false;
-          break;
-      default:
-        isCloud = false;
+      bits = gitBinaryType(base,'shadow')
+      isShadow = checkCondition(bits);
+      if(isShadow){
+        shadowVal = 1
       }
 
-      if(base[2]){
-        bits = base[2]
-      }else{
-        bits = "0"
+      bits = gitBinaryType(base,'vegetation')
+      isVegetation = checkCondition(bits);
+      if(isVegetation){
+        vegetationVal = 1
       }
 
-      if(base[3]){
-        bits = bits + base[3]
-      }else{
-        bits = bits + "0"
+      bits = gitBinaryType(base,'dropped')
+      isDropped = checkCondition(bits);
+      if(isDropped){
+        droppedVal = 1
       }
 
-      switch (bits) {
-        case "10":
-          isCirrus = true;
-          break;
-        case "11":
-          isCirrus = true;
-          break;
-       case "01":
-          isCirrus = false;
-          break;
-       case "01":
-          isCirrus = false;
-          break;
-        default:
-        isCirrus = false;
-      }
 
-    if(isCloud){
-      cloudVal = 1
     }
-    if(isCirrus){
-      cloudVal = 1
-    }
-  }
 
-  //var properties = {id:i,value:value,ndvi:ndvi,ndmi:ndmi,swir:swir,cloud:cloud,shadow:shadow,water:water,dropped:dropped,vegetation:vegetation};
+  //var properties = {id:i,value:value,ndvi:ndvi,ndmi:ndmi,swir:swir,cloud:cloud,shadow:shadow,water:water,
+  //dropped:dropped,vegetation:vegetation};
  var properties = {
-   id:i,
-   x:x,
-   y:y,
-   qa:cloudValue,
+   //id:i,
+   //x:x,
+   //y:y,
+   //qa:cloudValue,
    nir:nirValue,
    swir1:swir1Value,
    swir2:swir2Value,
-   tir1:tir1Value,
-   tir2:tir2Value,
+   //tir1:tir1Value,
+   //tir2:tir2Value,
    red:redValue,
    green:greenValue,
    blue:blueValue,
+   rgb:'(' + (redValue/255).toFixed(0) + ',' + (blueValue/255).toFixed(0) + ',' +  (greenValue/255).toFixed(0) + ')',
    cloud:cloudVal,
-   swir:swir,
-   ndmi:ndmi,
-   ndvi:ndvi
+   shadow:shadowVal,
+   water:waterVal,
+   vegetation:vegetationVal,
+   dropped:droppedVal,
+   swir:parseFloat((swir*100).toFixed(2)),
+   ndmi:parseFloat((ndmi*100).toFixed(2)),
+   ndvi:parseFloat((ndvi*100).toFixed(2))
  }
         //if(ndvi===null){ndvi=0};
     if (cloudVal === 0){
@@ -458,29 +563,33 @@ for(var i = 0; i < points.features.length; i++) {
   }
     //console.log( parseFloat(((i+1)/Object.keys(hexgrid.features).length)*10).toFixed(2) )
  }
+ percentComplete = ((i/points.features.length)*100).toFixed(0);
+ if(percentCompleteLast != percentComplete){
+    console.log('  values completed: ' + percentComplete  + '% ');
+    percentCompleteLast = percentComplete;
+ }
+
 }
 
 //create a featurecollection for output as geojson
 var fc = turf.featurecollection(features);
-//fs.writeFileSync('./randomptswithvalues.geojson', JSON.stringify(fc));
 writeFile (outdirectory,sceneid,'points_withvalues',fc);
 
 //run statistics
 console.log('Generating statistics');
 var aggregations = '';
-var aggregated = '';
 
-console.log(' Hex NDMI');
+console.log(' Grid NDMI');
 aggregations = setAggreations('ndmi')
-ndmi_aggregated = turf.aggregate(hexgrid, fc, aggregations);
+var ndmi_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
-console.log(' Hex NDVI');
+console.log(' Grid NDVI');
 aggregations = setAggreations('ndvi')
-ndvi_aggregated = turf.aggregate(hexgrid, fc, aggregations);
+var ndvi_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
-console.log(' Hex SWIR');
+console.log(' Grid SWIR');
 aggregations = setAggreations('swir')
-swir_aggregated = turf.aggregate(hexgrid, fc, aggregations);
+var swir_aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
 //loop hex and fix non-number values
 console.log('Fix nulls');
@@ -488,36 +597,36 @@ ndmi_aggregated = fixNulls(ndmi_aggregated);
 ndvi_aggregated = fixNulls(ndvi_aggregated);
 swir_aggregated = fixNulls(swir_aggregated);
 
-//write hexgrid with statistics
+//write grid with statistics
 console.log('Write Grids');
-writeFile (outdirectory,sceneid,'ndmi_hexgrid_values',ndmi_aggregated);
-writeFile (outdirectory,sceneid,'ndvi_hexgrid_values',ndvi_aggregated);
-writeFile (outdirectory,sceneid,'swir_hexgrid_values',swir_aggregated);
+writeFile (outdirectory,sceneid,'ndmi_grid_values',ndmi_aggregated);
+writeFile (outdirectory,sceneid,'ndvi_grid_values',ndvi_aggregated);
+writeFile (outdirectory,sceneid,'swir_grid_values',swir_aggregated);
 
 //break data into 20 classes based on jenks method
-console.log('Make Clasess');
-var ndmi_breaks = turf.jenks(fc, 'ndmi', 10);
-var ndvi_breaks = turf.jenks(fc, 'ndmi', 10);
-var swir_breaks = turf.jenks(fc, 'ndmi', 10);
+console.log('Make Breaks');
+var ndmi_breaks = turf.jenks(ndmi_aggregated, 'average', 10);
+var ndvi_breaks = turf.jenks(ndvi_aggregated, 'average', 10);
+var swir_breaks = turf.jenks(swir_aggregated, 'average', 10);
 
 //create isolines
 console.log('Make Isolines');
-var ndmi_isolined = turf.isolines(fc, 'ndmi', 10, ndmi_breaks);
+var ndmi_isolined = turf.isolines(fc, 'ndmi', 25, ndmi_breaks);
 writeFile (outdirectory,sceneid,'ndmi_isolines',ndmi_isolined);
 
-var ndvi_isolined = turf.isolines(fc, 'ndvi', 10, ndvi_breaks);
+var ndvi_isolined = turf.isolines(fc, 'ndvi', 25, ndvi_breaks);
 writeFile (outdirectory,sceneid,'ndvi_isolines',ndvi_isolined);
 
-var swir_isolined = turf.isolines(fc, 'swir', 10, swir_breaks);
+var swir_isolined = turf.isolines(fc, 'swir', 25, swir_breaks);
 writeFile (outdirectory,sceneid,'swir_isolines',swir_isolined);
 
 //create isobands
 console.log('Make Isobands');
-var ndmi_isolined = turf_isobands(fc, 'ndmi', 10, ndmi_breaks);
+var ndmi_isolined = turf_isobands(fc, 'ndmi', 25, ndmi_breaks);
 writeFile (outdirectory,sceneid,'ndmi_isobands',ndmi_isolined);
 
-var ndvi_isolined = turf_isobands(fc, 'ndvi', 10, ndvi_breaks);
+var ndvi_isolined = turf_isobands(fc, 'ndvi', 25, ndvi_breaks);
 writeFile (outdirectory,sceneid,'ndvi_isobands',ndvi_isolined);
 
-var swir_isolined = turf_isobands(fc, 'ndmi', 10, swir_breaks);
+var swir_isolined = turf_isobands(fc, 'ndmi', 25, swir_breaks);
 writeFile (outdirectory,sceneid,'swir_isobands',swir_isolined);
