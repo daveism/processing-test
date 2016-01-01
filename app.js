@@ -13,7 +13,7 @@ program
     .option('-s, --sceneid <string>', 'Sceneid for landsat 8', String)
     .option('-z, --gridsize <float>', 'Size of grid in Kilometers', parseFloat)
     .option('-p, --numberpoints <int>', 'Size of grid in Kilometers', parseInt)
-    .option('-g, --gridtype <String>', 'set the grid type [hex,box]', String)
+    .option('-g, --gridtype <String>', 'set the grid type <hex or box>', String)
     .option('-i, --indirectory <String>', 'Directory containing scene data', String)
     .option('-o, --outdirectory <String>', 'Directory for all output', String)
     .parse(process.argv);
@@ -227,6 +227,20 @@ var setAggreations = function(statisticsField){
   return agg;
 
 }
+//gets duration based on start and end time milliseconds
+var msToTime = function (duration) {
+    'use strict';
+    var milliseconds = duration,
+        seconds = parseInt((duration / 1000) % 60),
+        minutes = parseInt((duration / (1000 * 60)) % 60),
+        hours = parseInt((duration / (1000 * 60 * 60)) % 24);
+
+    hours = (hours < 10) ? "0" + hours : hours;
+    minutes = (minutes < 10) ? "0" + minutes : minutes;
+    seconds = (seconds < 10) ? "0" + seconds : seconds;
+
+    return hours + ":" + minutes + ":" + seconds + "." + milliseconds;
+};
 
 //make nulls 0 in statics
 //this improves the ability for GIS to render
@@ -345,10 +359,16 @@ var gitBinaryType = function(binary,type){
   return newBinary;
 }
 
+var makeValue = function(condition){
+  var val = 0;
+  if(condition){
+    val = 1;
+  }
+
+  return val;
+}
 //make a point with property attributes
 var makePoint = function(id,x,y){
-
-    var features = [];
 
     //get pixel values for bands
     var cloudValue = getPixelValue(cloudDS,cloudPixels,x,y)
@@ -386,41 +406,27 @@ var makePoint = function(id,x,y){
 
       bits = gitBinaryType(base,'cloud');
       isCloud = checkCondition(bits);
+      cloudVal = makeValue(isCloud);
 
       bits = gitBinaryType (base,'cirrus');
       isCirrus = checkCondition(bits);
-
-      if(isCloud){
-        cloudVal = 1;
-      }
-      if(isCirrus){
-        cloudVal = 1;
-        cirrusVal = 1;
-      }
+      cirrusVal = makeValue(isCirrus);
 
       bits = gitBinaryType(base,'water')
       isWater = checkCondition(bits);
-      if(isWater){
-        waterVal = 1
-      }
+      waterVal = makeValue(isWater);
 
       bits = gitBinaryType(base,'shadow')
       isShadow = checkCondition(bits);
-      if(isShadow){
-        shadowVal = 1
-      }
+      shadowVal = makeValue(isShadow);
 
       bits = gitBinaryType(base,'vegetation')
       isVegetation = checkCondition(bits);
-      if(isVegetation){
-        vegetationVal = 1
-      }
+      vegetationVal = makeValue(isVegetation);
 
       bits = gitBinaryType(base,'dropped')
       isDropped = checkCondition(bits);
-      if(isDropped){
-        droppedVal = 1
-      }
+      droppedVal = makeValue(isDropped);
 
     }
 
@@ -449,15 +455,23 @@ var makePoint = function(id,x,y){
       ndvi:parseFloat((ndvi*100).toFixed(2))
     }
 
-    if (cloudVal === 0 || cirrusVal === 0){
+    if (cloudVal === 0 && cirrusVal === 0){
       //create a new point with a property (attribute) of the change value
       var pt = turf.point([x,y], properties);
       return pt;
-      //add new point to new feature
-      //features.push(pt);
   }else{
     return null;
   }
+}
+
+//create and write the Point with Values GeoJSON data
+var createPointGeoJSON = function(data){
+
+  //create a featurecollection for output as geojson
+  var fc = turf.featurecollection(data);
+  writeFile (outdirectory,sceneid,'points_withvalues',fc);
+
+  return fc;
 }
 
 //check if the current point is in the scene
@@ -472,6 +486,53 @@ var isPointInScene = function(x, y, index, scene){
 
   return isInside;
 }
+
+//creaete a grid of basic statiscs for a numerical field
+var createStatisticsGrid = function(field){
+
+  var st = new Date().getTime();
+
+  process.stdout.write(" Grid " + field + " - running statistics\r");
+  //console.log('  Grid ' + field + ' - running statistics');
+  var aggregations = setAggreations(field)
+  var aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
+
+  process.stdout.write(" Grid " + field + " - fixing nulls\r");
+  //console.log('  Grid ' + field + ' - fixing nulls');
+  var aggregated = fixNulls(aggregated);
+
+  process.stdout.write(" Grid " + field + " - writing grid\r");
+  //console.log('  Grid ' + field + ' - writing grid');
+  writeFile (outdirectory,sceneid,field + '_grid_values',aggregated);
+
+  var et = new Date().getTime();
+  var t = et - st;
+  var tm = msToTime(t);
+  process.stdout.write("Stats Completed in " + tm + "\r");
+
+  //console.log('  ' + field + ' Stats Completed in ' + atimeMessage);
+
+  return aggregated;
+}
+
+var createIsoLines = function(aggregate,field){
+  var breaks = turf.jenks(aggregate, 'average', 10);
+  var isoline = turf.isolines(fc, field, 25, breaks);
+  writeFile (outdirectory,sceneid, field + '_isolines',isoline);
+
+  return isoline;
+
+}
+
+var createIsoBands = function(aggregate,field){
+  var breaks = turf.jenks(aggregate, 'average', 10);
+  var isoband = turf_isobands(fc, field, 25, breaks);
+  writeFile (outdirectory,sceneid, field + '_isobands',isoband);
+
+  return isoband;
+
+}
+
 //get GDAL dataset for bands
 var cloudDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('cloud') + ".TIF");
 var nirDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('nir') + ".TIF");
@@ -548,6 +609,8 @@ var percentComplete = 0;
 
 //loop points to get change value at each random point
 console.log('Getting change value');
+var startTime = new Date().getTime();
+var endTime;
 for(var i = 0; i < points.features.length; i++) {
 
   //get x,y
@@ -569,75 +632,289 @@ for(var i = 0; i < points.features.length; i++) {
   process.stdout.write("  values completed: " + percentComplete  + "% \r");
 
 }
+endTime = new Date().getTime();
+var aTime = endTime - startTime;
+var  timeMessage = msToTime(aTime);
+console.log('completed Values in ' + timeMessage);
 
-//create a featurecollection for output as geojson
-var fc = turf.featurecollection(features);
-writeFile (outdirectory,sceneid,'points_withvalues',fc);
+
+//create the Point with values geojson
+var fc = createPointGeoJSON(features)
 
 //run statistics
 console.log();
 console.log('Generating statistics');
 
-console.log('  Grid NDMI');
-var ndmi_aggregations = setAggreations('ndmi')
-var ndmi_aggregated = turf.aggregate(grid_GeoJSON, fc, ndmi_aggregations);
-console.log('  Grid NDMI - fix nulls');
-var ndmi_aggregatedNN = fixNulls(ndmi_aggregated);
-console.log('  Grid NDMI - write grid');
-writeFile (outdirectory,sceneid,'ndmi_grid_values',ndmi_aggregatedNN);
+var Stats_startTime = new Date().getTime();
+var Stats_endTime;
 
-console.log('  Grid NDVI');
-var ndvi_aggregations = setAggreations('ndvi')
-var ndvi_aggregated = turf.aggregate(grid_GeoJSON, fc, ndvi_aggregations);
-console.log('  Grid NDVI - fix nulls');
-var ndvi_aggregatedNN = fixNulls(ndvi_aggregated);
-console.log('  Grid NDVI - write grid');
-writeFile (outdirectory,sceneid,'ndvi_grid_values',ndvi_aggregatedNN);
+console.log('  Starting NDMI');
+var ndmi_aggregated = createStatisticsGrid('ndmi')
+console.log('  Completed NDMI');
 
-console.log('  Grid SWIR');
-var swir_aggregations = setAggreations('swir')
-var swir_aggregated = turf.aggregate(grid_GeoJSON, fc, swir_aggregations);
-console.log('  Grid SWIR - fix nulls');
-var swir_aggregatedNN = fixNulls(swir_aggregated);
-console.log('  Grid SWIR - write grid');
-writeFile (outdirectory,sceneid,'swir_grid_values',swir_aggregatedNN);
+console.log('  Starting NDVI');
+var ndvi_aggregated = createStatisticsGrid('ndvi')
+console.log('  Completed NDVI');
 
-// //loop hex and fix non-number values
-// console.log('Fix nulls');
-// //ndmi_aggregatedNN = fixNulls(ndmi_aggregated);
-// //ndvi_aggregatedNN = fixNulls(ndvi_aggregated);
-// // swir_aggregatedNN = fixNulls(swir_aggregated);
-//
-// //write grid with statistics
-// console.log('Write Grids');
-// //writeFile (outdirectory,sceneid,'ndmi_grid_values',ndmi_aggregatedNN);
-// // writeFile (outdirectory,sceneid,'ndvi_grid_values',ndvi_aggregatedNN);
-// // writeFile (outdirectory,sceneid,'swir_grid_values',swir_aggregatedNN);
+console.log('  Starting SWIR');
+var swir_aggregated = createStatisticsGrid('swir')
+console.log('  Completed SWIR');
+
+Stats_endTime = new Date().getTime();
+var Stats_Time = Stats_endTime - Stats_startTime;
+var  Stats_timeMessage = msToTime(Stats_Time);
+
+console.log();
+console.log('Completed Statistiscs Grids in ' + Stats_timeMessage);
+console.log();
 
 //break data into 20 classes based on jenks method
-console.log('Make Breaks');
-var ndmi_breaks = turf.jenks(ndmi_aggregated, 'average', 10);
-var ndvi_breaks = turf.jenks(ndvi_aggregated, 'average', 10);
-var swir_breaks = turf.jenks(swir_aggregated, 'average', 10);
+//console.log('Make Breaks');
+// var ndmi_breaks = turf.jenks(ndmi_aggregated, 'average', 10);
+// var ndvi_breaks = turf.jenks(ndvi_aggregated, 'average', 10);
+// var swir_breaks = turf.jenks(swir_aggregated, 'average', 10);
+
 
 //create isolines
 console.log('Make Isolines');
-var ndmi_isolined = turf.isolines(fc, 'ndmi', 25, ndmi_breaks);
-writeFile (outdirectory,sceneid,'ndmi_isolines',ndmi_isolined);
+createIsoLines(ndmi_aggregated, 'ndmi');
+createIsoLines(ndvi_aggregated, 'ndvi');
+createIsoLines(swir_aggregated, 'swir');
 
-var ndvi_isolined = turf.isolines(fc, 'ndvi', 25, ndvi_breaks);
-writeFile (outdirectory,sceneid,'ndvi_isolines',ndvi_isolined);
+// var ndmi_isolined = turf.isolines(fc, 'ndmi', 25, ndmi_breaks);
+// writeFile (outdirectory,sceneid,'ndmi_isolines',ndmi_isolined);
 
-var swir_isolined = turf.isolines(fc, 'swir', 25, swir_breaks);
-writeFile (outdirectory,sceneid,'swir_isolines',swir_isolined);
+// var ndvi_isolined = turf.isolines(fc, 'ndvi', 25, ndvi_breaks);
+// writeFile (outdirectory,sceneid,'ndvi_isolines',ndvi_isolined);
+//
+// var swir_isolined = turf.isolines(fc, 'swir', 25, swir_breaks);
+// writeFile (outdirectory,sceneid,'swir_isolines',swir_isolined);
 
 //create isobands
 console.log('Make Isobands');
-var ndmi_isolined = turf_isobands(fc, 'ndmi', 25, ndmi_breaks);
-writeFile (outdirectory,sceneid,'ndmi_isobands',ndmi_isolined);
+createIsoBands(ndmi_aggregated, 'ndmi');
+createIsoBands(ndvi_aggregated, 'ndvi');
+createIsoBands(swir_aggregated, 'swir');
 
-var ndvi_isolined = turf_isobands(fc, 'ndvi', 25, ndvi_breaks);
-writeFile (outdirectory,sceneid,'ndvi_isobands',ndvi_isolined);
+// var ndmi_isolined = turf_isobands(fc, 'ndmi', 25, ndmi_breaks);
+// writeFile (outdirectory,sceneid,'ndmi_isobands',ndmi_isolined);
+//
+// var ndvi_isolined = turf_isobands(fc, 'ndvi', 25, ndvi_breaks);
+// writeFile (outdirectory,sceneid,'ndvi_isobands',ndvi_isolined);
+//
+// var swir_isolined = turf_isobands(fc, 'ndmi', 25, swir_breaks);
+// writeFile (outdirectory,sceneid,'swir_isobands',swir_isolined);
 
-var swir_isolined = turf_isobands(fc, 'ndmi', 25, swir_breaks);
-writeFile (outdirectory,sceneid,'swir_isobands',swir_isolined);
+// ndmi_aggregated = null;
+// ndvi_aggregated = null;
+// swir_aggregated = null;
+//
+// ndmi_breaks = null;
+// ndvi_breaks = null;
+// swir_breaks = null;
+//
+// swir_isolined = null;
+// ndvi_isolined = null;
+// ndmi_isolined = null;
+
+//
+// var itemspts =  points.features;
+// var results = [];
+// var running = 0;
+// var limit = 25000;
+// var cnt = 0;
+// var total = itemspts.length;
+// var apts =[];
+// var pixelPoint_Milliseconds = 0;
+//
+//
+// var getPixelPoints_Async = function(arg, cnt, callback) {
+//   x = arg.geometry.coordinates[0];
+//   y = arg.geometry.coordinates[1];
+//
+//   isInside = isPointInScene(x, y, cnt, wrs2Scene.features[0]);
+//
+//   if( isInside ){
+//
+//     var apt = makePoint(cnt, x, y); //turf.point([x,y],{id:cnt});
+//
+//     //add new point to new feature
+//     if(apt){
+//       apts.push(apt);
+//     }
+//
+//   }
+//   //percentComplete = ((cnt/total)*100).toFixed(0);
+//   //process.stdout.write("  values completed: " + percentComplete  + "% \r");
+//
+//   setTimeout(function() { callback(arg, cnt); }, pixelPoint_Milliseconds);
+// }
+//
+// var getPixelPoints_Complete = function() {
+//
+//   //create a featurecollection for output as geojson
+//   var fcs = turf.featurecollection(apts);
+//   writeFile (outdirectory,sceneid,'points_test',fcs);
+//   console.log();
+//   console.log('Done points!');
+//   ptsendTime = new Date().getTime();
+//   var ptsTime = ptsendTime - ptsstartTime;
+//   var  ptstimeMessage = msToTime(aTime);
+//   console.log();
+//   console.log('points completed in ' + ptstimeMessage);
+//
+// }
+//
+// //set the timeout for async Pixel Value call
+// var setPixelPoints_Timeout = function(timeout) {
+//   pixelPoint_Milliseconds = timeout;
+// }
+// var getPixelPoints_Launcher = function() {
+//   while(running < limit && itemspts.length > 0) {
+//     var item = itemspts.shift();
+//     getPixelPoints_Async(item, cnt, function(result) {
+//       results.push(result);
+//       running--;
+//       if(itemspts.length > 0) {
+//         getPixelPoints_Launcher();
+//       } else if(running == 0) {
+//         getPixelPoints_Complete();
+//       }
+//     });
+//     running++;
+//     cnt++;
+//   }
+// }
+//
+// var ptsstartTime = new Date().getTime();
+// var ptsendTime;
+// console.log('start processing 2');
+// setPixelPoints_Timeout(0);
+// getPixelPoints_Launcher();
+// console.log();
+
+
+
+                //***//
+
+
+
+
+                // var items =  ['ndmi', 'ndvi', 'swir'];
+                // var results = [];
+                // var running = 0;
+                // var limit = 25000;
+                // var cnt = 0;
+                // var total = items.length;
+                // var pixelPoint_Milliseconds = 0;
+                //
+                //
+                // var getGridStats_Async = function(arg, cnt, callback) {
+                //
+                //   var ndmi_aggregated = createStatisticsGrid(arg)
+                //
+                //   percentComplete = ((cnt/total)*100).toFixed(0);
+                //   process.stdout.write("  completed: " + percentComplete  + "% \r");
+                //
+                //   setTimeout(function() { callback(arg, cnt); }, pixelPoint_Milliseconds);
+                // }
+                //
+                // var getGridStats_Complete = function() {
+                //
+                //   console.log();
+                //   console.log('Done!');
+                //   endTime = new Date().getTime();
+                //   var aTime = endTime - startTime;
+                //   var  timeMessage = msToTime(aTime);
+                //   console.log('completed in ' + timeMessage);
+                //
+                // }
+                //
+                // //set the timeout for async Pixel Value call
+                // var setGridStats_Timeout = function(timeout) {
+                //   pixelPoint_Milliseconds = timeout;
+                // }
+                // var getGridStats_Launcher = function() {
+                //   while(running < limit && items.length > 0) {
+                //     var item = items.shift();
+                //     getGridStats_Async(item, cnt, function(result) {
+                //       results.push(result);
+                //       running--;
+                //       if(items.length > 0) {
+                //         getGridStats_Launcher();
+                //       } else if(running == 0) {
+                //         getGridStats_Complete();
+                //       }
+                //     });
+                //     running++;
+                //     cnt++;
+                //   }
+                // }
+
+
+// function cb(err, result) {
+//    if(err){
+//      console.log(err);
+//    }
+//   console.log(result);
+// }
+
+function async(arg, cb) {
+  //console.log('do something with \''+arg+'\', return 1 sec later');
+  //console.log(arg)
+  createStatisticsGrid(arg)
+  //createStatisticsGrid(arg);
+  setTimeout(function() { cb(arg); }, 0);
+  //function() { cb(arg);};
+}
+function final(starttime) {
+  var endTime = new Date().getTime();
+  var TotalTime = endTime - starttime;
+  var timeMessage = msToTime(TotalTime);
+  console.log('completed stats in ' + timeMessage);
+}
+
+var StartStats_Async = function(Stats){
+
+  var items = Stats;
+  var results = [];
+
+  var startTime = new Date().getTime();
+
+  console.log('start stats 2');
+  items.forEach(function(item) {
+    async(item, function(result){
+      results.push(result);
+      if(results.length == items.length) {
+        final(startTime);
+      }
+    })
+  });
+
+}
+
+
+StartStats_Async(['ndmi', 'ndvi', 'swir']);
+
+fc  = null;
+
+
+cloudDS = null;
+nirDS = null;
+swir1DS = null;
+swir2DS = null;
+tir1DS = null;
+tir2DS = null;
+redDS = null;
+greenDS = null;
+blueDS = null;
+
+cloudPixels = null;
+nirPixels = null;
+swir1Pixels = null;
+swir2Pixels = null;
+tir1Pixels = null;
+tir2Pixels = null;
+redPixels = null;
+greenPixels = null;
+bluePixels = null;
