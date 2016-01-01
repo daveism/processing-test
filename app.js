@@ -5,6 +5,8 @@ var turf = require('turf');
 var turf_isobands = require('turf-isobands');
 var program = require('commander');
 
+var total_startTime = new Date().getTime();
+var total_endTime;
 
 //args
 program
@@ -491,46 +493,42 @@ var isPointInScene = function(x, y, index, scene){
 var createStatisticsGrid = function(field){
 
   var st = new Date().getTime();
-
-  process.stdout.write(" Grid " + field + " - running statistics\r");
-  //console.log('  Grid ' + field + ' - running statistics');
+  console.log();
+  console.log("Starting "  + field);
+  console.log("  Running statistics for "  + field);
   var aggregations = setAggreations(field)
   var aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
-  process.stdout.write(" Grid " + field + " - fixing nulls\r");
-  //console.log('  Grid ' + field + ' - fixing nulls');
+  console.log("  Fixing nulls for " + field);
   var aggregated = fixNulls(aggregated);
 
-  process.stdout.write(" Grid " + field + " - writing grid\r");
-  //console.log('  Grid ' + field + ' - writing grid');
+  console.log("  Writing grid " + field);
   writeFile (outdirectory,sceneid,field + '_grid_values',aggregated);
 
   var et = new Date().getTime();
   var t = et - st;
   var tm = msToTime(t);
-  process.stdout.write("Stats Completed in " + tm + "\r");
-
-  //console.log('  ' + field + ' Stats Completed in ' + atimeMessage);
+  console.log("Completed "  + field + " in " + tm);
 
   return aggregated;
 }
 
+//create an isoline geojson file
 var createIsoLines = function(aggregate,field){
   var breaks = turf.jenks(aggregate, 'average', 10);
   var isoline = turf.isolines(fc, field, 25, breaks);
   writeFile (outdirectory,sceneid, field + '_isolines',isoline);
 
   return isoline;
-
 }
 
+//create an isoband geojson file
 var createIsoBands = function(aggregate,field){
   var breaks = turf.jenks(aggregate, 'average', 10);
   var isoband = turf_isobands(fc, field, 25, breaks);
   writeFile (outdirectory,sceneid, field + '_isobands',isoband);
 
   return isoband;
-
 }
 
 //get GDAL dataset for bands
@@ -584,7 +582,6 @@ if(gridtype==='box'){
 }else{
   grid_GeoJSON = turf.hexGrid(bbox, gridsize, gridUnits);
 }
-//
 
 //add statistics fields
 grid_GeoJSON = addSatisticFields(grid_GeoJSON);
@@ -600,6 +597,7 @@ if(useCenter){
   var points = turf.random('points', numberpoints, {bbox: bbox});
 }
 
+//write points file
 writeFile (outdirectory,sceneid,'points',points);
 
 //ceate an empty features array for inserting new points
@@ -609,8 +607,8 @@ var percentComplete = 0;
 
 //loop points to get change value at each random point
 console.log('Getting change value');
-var startTime = new Date().getTime();
-var endTime;
+var points_startTime = new Date().getTime();
+var points_endTime;
 for(var i = 0; i < points.features.length; i++) {
 
   //get x,y
@@ -619,24 +617,23 @@ for(var i = 0; i < points.features.length; i++) {
 
   isInside = isPointInScene(x, y, i, wrs2Scene.features[0]);
 
- if( isInside ){
-   var pt = makePoint(i,x,y);
+  if( isInside ){
+    var pt = makePoint(i,x,y);
 
-   //add new point to new feature
-   if(pt){
-     features.push(pt);
-   }
+    //add new point to new feature
+    if(pt){
+      features.push(pt);
+    }
  }
 
   percentComplete = ((i/points.features.length)*100).toFixed(0);
   process.stdout.write("  values completed: " + percentComplete  + "% \r");
 
 }
-endTime = new Date().getTime();
-var aTime = endTime - startTime;
-var  timeMessage = msToTime(aTime);
-console.log('completed Values in ' + timeMessage);
-
+points_endTime = new Date().getTime();
+var points_Time = points_endTime - points_startTime;
+var points_timeMessage = msToTime(points_Time);
+console.log('completed Values in ' + points_timeMessage);
 
 //create the Point with values geojson
 var fc = createPointGeoJSON(features)
@@ -648,32 +645,17 @@ console.log('Generating statistics');
 var Stats_startTime = new Date().getTime();
 var Stats_endTime;
 
-console.log('  Starting NDMI');
 var ndmi_aggregated = createStatisticsGrid('ndmi')
-console.log('  Completed NDMI');
-
-console.log('  Starting NDVI');
 var ndvi_aggregated = createStatisticsGrid('ndvi')
-console.log('  Completed NDVI');
-
-console.log('  Starting SWIR');
 var swir_aggregated = createStatisticsGrid('swir')
-console.log('  Completed SWIR');
 
 Stats_endTime = new Date().getTime();
 var Stats_Time = Stats_endTime - Stats_startTime;
 var  Stats_timeMessage = msToTime(Stats_Time);
 
 console.log();
-console.log('Completed Statistiscs Grids in ' + Stats_timeMessage);
+console.log('Completed Statistics Grids in ' + Stats_timeMessage);
 console.log();
-
-//break data into 20 classes based on jenks method
-//console.log('Make Breaks');
-// var ndmi_breaks = turf.jenks(ndmi_aggregated, 'average', 10);
-// var ndvi_breaks = turf.jenks(ndvi_aggregated, 'average', 10);
-// var swir_breaks = turf.jenks(swir_aggregated, 'average', 10);
-
 
 //create isolines
 console.log('Make Isolines');
@@ -681,223 +663,21 @@ createIsoLines(ndmi_aggregated, 'ndmi');
 createIsoLines(ndvi_aggregated, 'ndvi');
 createIsoLines(swir_aggregated, 'swir');
 
-// var ndmi_isolined = turf.isolines(fc, 'ndmi', 25, ndmi_breaks);
-// writeFile (outdirectory,sceneid,'ndmi_isolines',ndmi_isolined);
-
-// var ndvi_isolined = turf.isolines(fc, 'ndvi', 25, ndvi_breaks);
-// writeFile (outdirectory,sceneid,'ndvi_isolines',ndvi_isolined);
-//
-// var swir_isolined = turf.isolines(fc, 'swir', 25, swir_breaks);
-// writeFile (outdirectory,sceneid,'swir_isolines',swir_isolined);
-
 //create isobands
 console.log('Make Isobands');
 createIsoBands(ndmi_aggregated, 'ndmi');
 createIsoBands(ndvi_aggregated, 'ndvi');
 createIsoBands(swir_aggregated, 'swir');
 
-// var ndmi_isolined = turf_isobands(fc, 'ndmi', 25, ndmi_breaks);
-// writeFile (outdirectory,sceneid,'ndmi_isobands',ndmi_isolined);
-//
-// var ndvi_isolined = turf_isobands(fc, 'ndvi', 25, ndvi_breaks);
-// writeFile (outdirectory,sceneid,'ndvi_isobands',ndvi_isolined);
-//
-// var swir_isolined = turf_isobands(fc, 'ndmi', 25, swir_breaks);
-// writeFile (outdirectory,sceneid,'swir_isobands',swir_isolined);
+total_endTime = new Date().getTime();
+var total_Time = total_endTime - total_startTime;
+var total_timeMessage = msToTime(total_Time);
 
-// ndmi_aggregated = null;
-// ndvi_aggregated = null;
-// swir_aggregated = null;
-//
-// ndmi_breaks = null;
-// ndvi_breaks = null;
-// swir_breaks = null;
-//
-// swir_isolined = null;
-// ndvi_isolined = null;
-// ndmi_isolined = null;
-
-//
-// var itemspts =  points.features;
-// var results = [];
-// var running = 0;
-// var limit = 25000;
-// var cnt = 0;
-// var total = itemspts.length;
-// var apts =[];
-// var pixelPoint_Milliseconds = 0;
-//
-//
-// var getPixelPoints_Async = function(arg, cnt, callback) {
-//   x = arg.geometry.coordinates[0];
-//   y = arg.geometry.coordinates[1];
-//
-//   isInside = isPointInScene(x, y, cnt, wrs2Scene.features[0]);
-//
-//   if( isInside ){
-//
-//     var apt = makePoint(cnt, x, y); //turf.point([x,y],{id:cnt});
-//
-//     //add new point to new feature
-//     if(apt){
-//       apts.push(apt);
-//     }
-//
-//   }
-//   //percentComplete = ((cnt/total)*100).toFixed(0);
-//   //process.stdout.write("  values completed: " + percentComplete  + "% \r");
-//
-//   setTimeout(function() { callback(arg, cnt); }, pixelPoint_Milliseconds);
-// }
-//
-// var getPixelPoints_Complete = function() {
-//
-//   //create a featurecollection for output as geojson
-//   var fcs = turf.featurecollection(apts);
-//   writeFile (outdirectory,sceneid,'points_test',fcs);
-//   console.log();
-//   console.log('Done points!');
-//   ptsendTime = new Date().getTime();
-//   var ptsTime = ptsendTime - ptsstartTime;
-//   var  ptstimeMessage = msToTime(aTime);
-//   console.log();
-//   console.log('points completed in ' + ptstimeMessage);
-//
-// }
-//
-// //set the timeout for async Pixel Value call
-// var setPixelPoints_Timeout = function(timeout) {
-//   pixelPoint_Milliseconds = timeout;
-// }
-// var getPixelPoints_Launcher = function() {
-//   while(running < limit && itemspts.length > 0) {
-//     var item = itemspts.shift();
-//     getPixelPoints_Async(item, cnt, function(result) {
-//       results.push(result);
-//       running--;
-//       if(itemspts.length > 0) {
-//         getPixelPoints_Launcher();
-//       } else if(running == 0) {
-//         getPixelPoints_Complete();
-//       }
-//     });
-//     running++;
-//     cnt++;
-//   }
-// }
-//
-// var ptsstartTime = new Date().getTime();
-// var ptsendTime;
-// console.log('start processing 2');
-// setPixelPoints_Timeout(0);
-// getPixelPoints_Launcher();
-// console.log();
-
-
-
-                //***//
-
-
-
-
-                // var items =  ['ndmi', 'ndvi', 'swir'];
-                // var results = [];
-                // var running = 0;
-                // var limit = 25000;
-                // var cnt = 0;
-                // var total = items.length;
-                // var pixelPoint_Milliseconds = 0;
-                //
-                //
-                // var getGridStats_Async = function(arg, cnt, callback) {
-                //
-                //   var ndmi_aggregated = createStatisticsGrid(arg)
-                //
-                //   percentComplete = ((cnt/total)*100).toFixed(0);
-                //   process.stdout.write("  completed: " + percentComplete  + "% \r");
-                //
-                //   setTimeout(function() { callback(arg, cnt); }, pixelPoint_Milliseconds);
-                // }
-                //
-                // var getGridStats_Complete = function() {
-                //
-                //   console.log();
-                //   console.log('Done!');
-                //   endTime = new Date().getTime();
-                //   var aTime = endTime - startTime;
-                //   var  timeMessage = msToTime(aTime);
-                //   console.log('completed in ' + timeMessage);
-                //
-                // }
-                //
-                // //set the timeout for async Pixel Value call
-                // var setGridStats_Timeout = function(timeout) {
-                //   pixelPoint_Milliseconds = timeout;
-                // }
-                // var getGridStats_Launcher = function() {
-                //   while(running < limit && items.length > 0) {
-                //     var item = items.shift();
-                //     getGridStats_Async(item, cnt, function(result) {
-                //       results.push(result);
-                //       running--;
-                //       if(items.length > 0) {
-                //         getGridStats_Launcher();
-                //       } else if(running == 0) {
-                //         getGridStats_Complete();
-                //       }
-                //     });
-                //     running++;
-                //     cnt++;
-                //   }
-                // }
-
-
-// function cb(err, result) {
-//    if(err){
-//      console.log(err);
-//    }
-//   console.log(result);
-// }
-
-function async(arg, cb) {
-  //console.log('do something with \''+arg+'\', return 1 sec later');
-  //console.log(arg)
-  createStatisticsGrid(arg)
-  //createStatisticsGrid(arg);
-  setTimeout(function() { cb(arg); }, 0);
-  //function() { cb(arg);};
-}
-function final(starttime) {
-  var endTime = new Date().getTime();
-  var TotalTime = endTime - starttime;
-  var timeMessage = msToTime(TotalTime);
-  console.log('completed stats in ' + timeMessage);
-}
-
-var StartStats_Async = function(Stats){
-
-  var items = Stats;
-  var results = [];
-
-  var startTime = new Date().getTime();
-
-  console.log('start stats 2');
-  items.forEach(function(item) {
-    async(item, function(result){
-      results.push(result);
-      if(results.length == items.length) {
-        final(startTime);
-      }
-    })
-  });
-
-}
-
-
-StartStats_Async(['ndmi', 'ndvi', 'swir']);
+console.log();
+console.log('Completed in: ' + total_timeMessage);
+console.log();
 
 fc  = null;
-
 
 cloudDS = null;
 nirDS = null;
