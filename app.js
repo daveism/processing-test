@@ -12,19 +12,15 @@ var total_endTime;
 program
     .version('0.0.1')
     .usage('[options] ')
-    .option('-s, --sceneid <string>', 'Sceneid for landsat 8', String)
     .option('-z, --gridsize <float>', 'Size of grid in Kilometers', parseFloat)
     .option('-p, --numberpoints <int>', 'Size of grid in Kilometers', parseInt)
     .option('-g, --gridtype <String>', 'set the grid type <hex or box>', String)
-    .option('-i, --indirectory <String>', 'Directory containing scene data', String)
+    .option('-i, --inimage <String>', 'Directory containing scene data', String)
     .option('-o, --outdirectory <String>', 'Directory for all output', String)
     .parse(process.argv);
 
-    // .option('-d, --sceneidtow', 'Sceneid for landsat 8', String)
-
 //get arguments into varriables
-var sceneid = program.sceneid;
-var indirectory = program.indirectory;
+var inimage = program.inimage;
 var numberpoints = program.numberpoints;
 var gridsize = program.gridsize;
 var outdirectory = program.outdirectory;
@@ -109,41 +105,11 @@ var getGDALPixels = function(dataset){
 }
 
 //write an output file
-var writeFile = function(outdirectory,sceneid,name,data){
+var writeFile = function(outdirectory,name,data){
 
   //write file
-  fs.writeFileSync(outdirectory + '/' + sceneid + '_' + name + '.geojson', JSON.stringify(data))
+  fs.writeFileSync(outdirectory + '/' + name + '.geojson', JSON.stringify(data))
   return;
-}
-
-var getWRS2Code = function(sceneid){
-
-  //get wrs to code for filter the scene's shape
-  var wrs2code = sceneid.substr(3,6)
-
-  return wrs2code;
-}
-
-var getWRSPath = function(sceneid){
-
-  //get wrs to code for filter the scene's shape
-  var WRSPath = sceneid.substr(3,3)
-
-  return WRSPath;
-}
-
-var getWRSRow = function(sceneid){
-
-  //get wrs to code for filter the scene's shape
-  var WRSRow = sceneid.substr(6,3)
-
-  return WRSRow;
-}
-
-var createBinaryString = function(nMask) {
-  // nMask must be between -2147483648 and 2147483647
-  for (var nFlag = 0, nShifted = nMask, sMask = ""; nFlag < 32; nFlag++, sMask += String(nShifted >>> 31), nShifted <<= 1);
-  return sMask.substr(16,32);
 }
 
 //add fields to data to statistics
@@ -162,6 +128,21 @@ var addSatisticFields = function(gridData){
 
  return gridData;
 }
+
+//tranform point to raster projection
+var transformPtWGS = function(dataset,x,y){
+  var srs = dataset.srs.toWKT();
+
+  console.log(srs);
+  //transform wgs84 point to pixel location
+  //pass dataset to use dataset projection
+  var transform = new gdal.CoordinateTransformation(gdal.SpatialReference.fromWKT(srs),gdal.SpatialReference.fromEPSG(4326));
+  var transformedPT = transform.transformPoint(x,y);
+
+  return transformedPT;
+}
+
+
 
 //tranform point to raster projection
 var transformPt = function(dataset,x,y){
@@ -392,97 +373,18 @@ var makeValue = function(condition){
 var makePoint = function(id,x,y){
 
     //get pixel values for bands
-    var cloudValue = getPixelValue(cloudDS,cloudPixels,x,y)
-    var nirValue = getPixelValue(nirDS,nirPixels,x,y)
-    var swir1Value = getPixelValue(swir1DS,swir1Pixels,x,y);
-    var swir2Value = getPixelValue(swir2DS,swir2Pixels,x,y);
-    //var tir1Value = getPixelValue(tir1DS,tir1Pixels,x,y);
-    //var tir2Value = getPixelValue(tir2DS,tir2Pixels,x,y);
-    var redValue = getPixelValue(redDS,redPixels,x,y)
-    var greenValue = getPixelValue(greenDS,greenPixels,x,y);
-    var blueValue = getPixelValue(blueDS,bluePixels,x,y);
-
-    //calc ndvi
-    var ndvi = (nirValue - redValue) / (nirValue + redValue);
-
-    //calc ndmi
-    var ndmi = (nirValue - swir1Value) / (nirValue + swir1Value);
-
-    //calc swir
-    var swir =  (swir2Value -  swir1Value) / Math.abs(swir1Value)
-
-    var cloudVal = 0;
-    var cirrusVal = 0;
-    var waterVal = 0;
-    var shadowVal = 0;
-    var vegetationVal = 0;
-    var droppedVal = 0;
-    var bits = "";
-    var isCloud = false;
-    var isCirrus = false;
-
-    if(cloudValue){
-      var base =  createBinaryString(cloudValue);
-      cloudValue = base;
-
-      bits = gitBinaryType(base,'cloud');
-      isCloud = checkCondition(bits);
-      cloudVal = makeValue(isCloud);
-
-      bits = gitBinaryType (base,'cirrus');
-      isCirrus = checkCondition(bits);
-      cirrusVal = makeValue(isCirrus);
-
-      bits = gitBinaryType(base,'water')
-      isWater = checkCondition(bits);
-      waterVal = makeValue(isWater);
-
-      bits = gitBinaryType(base,'shadow')
-      isShadow = checkCondition(bits);
-      shadowVal = makeValue(isShadow);
-
-      bits = gitBinaryType(base,'vegetation')
-      isVegetation = checkCondition(bits);
-      vegetationVal = makeValue(isVegetation);
-
-      bits = gitBinaryType(base,'dropped')
-      isDropped = checkCondition(bits);
-      droppedVal = makeValue(isDropped);
-
-    }
+    var imageValue = getPixelValue(inDataSet,inPixels,x,y)
 
     var properties = {
-      //id:id,
-      //x:x,
-      //y:y,
-      //qa:cloudValue,
-      nir:nirValue,
-      swir1:swir1Value,
-      swir2:swir2Value,
-      //tir1:tir1Value,
-      //tir2:tir2Value,
-      red:redValue,
-      green:greenValue,
-      blue:blueValue,
-      rgb:'(' + (redValue/255).toFixed(0) + ',' + (blueValue/255).toFixed(0) + ',' +  (greenValue/255).toFixed(0) + ')',
-      cloud:cloudVal,
-      cirrus:cirrusVal,
-      shadow:shadowVal,
-      water:waterVal,
-      vegetation:vegetationVal,
-      dropped:droppedVal,
-      swir:parseFloat((swir*100).toFixed(2)),
-      ndmi:parseFloat((ndmi*100).toFixed(2)),
-      ndvi:parseFloat((ndvi*100).toFixed(2))
+      id:id,
+      x:x,
+      y:y,
+      value:imageValue
     }
 
-    if (cloudVal === 0 && cirrusVal === 0){
-      //create a new point with a property (attribute) of the change value
-      var pt = turf.point([x,y], properties);
-      return pt;
-  }else{
-    return null;
-  }
+    //create a new point with a property (attribute) of the change value
+    var pt = turf.point([x,y], properties);
+    return pt;
 }
 
 //create and write the Point with Values GeoJSON data
@@ -490,7 +392,7 @@ var createPointGeoJSON = function(data){
 
   //create a featurecollection for output as geojson
   var fc = turf.featurecollection(data);
-  writeFile (outdirectory,sceneid,'points_withvalues',fc);
+  writeFile (outdirectory,'points_withvalues',fc);
 
   return fc;
 }
@@ -522,7 +424,7 @@ var createStatisticsGrid = function(field){
   var aggregatedRet = fixNulls(aggregated);
 
   console.log("  Writing grid " + field);
-  writeFile (outdirectory,sceneid,field + '_grid_values',aggregatedRet);
+  writeFile (outdirectory,field + '_grid_values',aggregatedRet);
 
   var et = new Date().getTime();
   var t = et - st;
@@ -536,7 +438,7 @@ var createStatisticsGrid = function(field){
 var createIsoLines = function(pnts,field){
   var breaks = turf.jenks(pnts, field, 10);
   var isoline = turf.isolines(pnts, field, 10, breaks);
-  writeFile (outdirectory,sceneid, field + '_isolines',isoline);
+  writeFile (outdirectory, field + '_isolines',isoline);
 
   return isoline;
 }
@@ -545,57 +447,55 @@ var createIsoLines = function(pnts,field){
 var createIsoBands = function(pnts,field){
   var breaks = turf.jenks(pnts, field, 10);
   var isoband = turf_isobands(pnts, field, 10, breaks);
-  writeFile (outdirectory,sceneid, field + '_isobands',isoband);
+  writeFile (outdirectory, field + '_isobands',isoband);
 
   return isoband;
 }
-//get the geojson for all scenes...
-console.log('Getting Scene info');
-var wrs2 = fs.readFileSync("wrs2codes.geojson");
-wrs2 = JSON.parse(wrs2);
 
-//get the wrs2code from the scene id
-var wrs2code = getWRS2Code(sceneid);
-var WRSRow = getWRSRow(sceneid);
-var WRSPath = getWRSPath(sceneid);
-
-
-console.log(wrs2code + '--' + WRSPath + '--' + WRSRow);
 
 //get GDAL dataset for bands
-var cloudDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('cloud') + ".TIF");
-var nirDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('nir') + ".TIF");
-var swir1DS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('swir1') + ".TIF");
-var swir2DS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('swir2') + ".TIF");
-var tir1DS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('tir1') + ".TIF");
-var tir2DS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('tir2') + ".TIF");
-var redDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('red') + ".TIF");
-var greenDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('green') + ".TIF");
-var blueDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('blue') + ".TIF");
+//get GDAL data set
+var inDataSet = getGDALdataset(inimage);
 
+//get extent of change mosaic
+var geoTransform = inDataSet.geoTransform
+var minx = geoTransform[0];
+var maxy = geoTransform[3];
+var maxx = minx + geoTransform[1]*inDataSet.rasterSize.x
+var miny = maxy + geoTransform[5]*inDataSet.rasterSize.y
+
+var minBoxPt = transformPtWGS(inDataSet,minx,miny)
+var maxBoxPt = transformPtWGS(inDataSet,maxx,maxy)
+
+minx = minBoxPt.x
+miny = minBoxPt.y
+
+maxx = maxBoxPt.x
+maxy = maxBoxPt.y
+
+//make wgs84 bbounding box
+var datasetBox = [minx, miny, maxx, maxy];
+//var datasetBox = turf.size(datasetBox,-0.95)
 //get pixes for raster data
 //needed for value
-var cloudPixels = getGDALPixels(cloudDS);
-var nirPixels = getGDALPixels(nirDS);
-var swir1Pixels = getGDALPixels(swir1DS);
-var swir2Pixels = getGDALPixels(swir2DS);
-var tir1Pixels = getGDALPixels(tir1DS);
-var tir2Pixels = getGDALPixels(tir2DS);
-var redPixels = getGDALPixels(redDS);
-var greenPixels = getGDALPixels(greenDS);
-var bluePixels = getGDALPixels(blueDS);
+var inPixels = getGDALPixels(inDataSet)
 
-//extract geojson for the indivual scene
-var wrs2Scene = turf.filter(wrs2,'wrs2_code',wrs2code.toString());
-writeFile (outdirectory,sceneid,'scene',wrs2Scene)
+
 
 //get  or extent of the scene
-var bbox = turf.extent(wrs2Scene)
+var bbox = datasetBox;//turf.extent(wrs2Scene)
 
 //make bounding box a polygon so we export the geojson
-var datasetPoly = turf.bboxPolygon(bbox);
+//var datasetPoly = turf.bboxPolygon(bbox);
 var poly = turf.bboxPolygon(bbox);
-writeFile (outdirectory,sceneid,'poly',poly);
+writeFile (outdirectory,'poly',poly);
+
+var datasetFeatures = turf.featurecollection(poly);
+
+
+//extract geojson for the indivual scene
+var imageBox = poly; //turf.filter(wrs2,'wrs2_code',wrs2code.toString());
+writeFile (outdirectory,'imagebox',imageBox)
 
 //create grid
 var grid_GeoJSON;
@@ -610,7 +510,7 @@ if(gridtype==='box'){
 grid_GeoJSON = addSatisticFields(grid_GeoJSON);
 
 //write the grids without values populated
-writeFile (outdirectory,sceneid,'grid',grid_GeoJSON);
+writeFile (outdirectory,'grid',grid_GeoJSON);
 
 console.log('Getting Points');
 if(useCenter){
@@ -621,7 +521,7 @@ if(useCenter){
 }
 
 //write points file
-writeFile (outdirectory,sceneid,'points',points);
+writeFile (outdirectory,'points',points);
 
 //ceate an empty features array for inserting new points
 var features = [];
@@ -638,16 +538,16 @@ for(var i = 0; i < points.features.length; i++) {
   var x = points.features[i].geometry.coordinates[0];
   var y = points.features[i].geometry.coordinates[1]
 
-  isInside = isPointInScene(x, y, i, wrs2Scene.features[0]);
+  //isInside = isPointInScene(x, y, i, datasetFeatures.features[0]);
 
-  if( isInside ){
+  //if( isInside ){
     var pt = makePoint(i,x,y);
 
     //add new point to new feature
     if(pt){
       features.push(pt);
     }
- }
+ //}
 
   percentComplete = ((i/points.features.length)*100).toFixed(0);
   process.stdout.write("  values completed: " + percentComplete  + "% \r");
@@ -668,9 +568,8 @@ console.log('Generating statistics');
 var Stats_startTime = new Date().getTime();
 var Stats_endTime;
 
-createStatisticsGrid('ndmi')
-createStatisticsGrid('ndvi')
-createStatisticsGrid('swir')
+createStatisticsGrid('value')
+
 
 Stats_endTime = new Date().getTime();
 var Stats_Time = Stats_endTime - Stats_startTime;
@@ -682,15 +581,11 @@ console.log();
 
 //create isolines
 console.log('Make Isolines');
-createIsoLines(fc, 'ndmi');
-createIsoLines(fc, 'ndvi');
-createIsoLines(fc, 'swir');
+createIsoLines(fc, 'value');
 
 //create isobands
 console.log('Make Isobands');
-createIsoBands(fc, 'ndmi');
-createIsoBands(fc, 'ndvi');
-createIsoBands(fc, 'swir');
+createIsoBands(fc, 'value');
 
 total_endTime = new Date().getTime();
 var total_Time = total_endTime - total_startTime;
@@ -702,22 +597,5 @@ console.log();
 
 fc  = null;
 
-cloudDS = null;
-nirDS = null;
-swir1DS = null;
-swir2DS = null;
-tir1DS = null;
-tir2DS = null;
-redDS = null;
-greenDS = null;
-blueDS = null;
-
-cloudPixels = null;
-nirPixels = null;
-swir1Pixels = null;
-swir2Pixels = null;
-tir1Pixels = null;
-tir2Pixels = null;
-redPixels = null;
-greenPixels = null;
-bluePixels = null;
+inDataSet = null;
+inPixels = null;
