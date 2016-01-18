@@ -82,15 +82,18 @@ var getBandEnder = function(bandtype){
   return type;
 }
 
+
 //get gdal pixels - needed to get a raster value at a x,y Coordinate
 var getGDALdataset = function(rasterName){
 
+  console.log(rasterName);
   //open raster in GDAL
   var dataSet = gdal.open(rasterName);;
 
   //return gdal pixels
   return dataSet;
 }
+
 
 //get gdal pixels - needed to get a raster value at a x,y Coordinate
 var getGDALPixels = function(dataset){
@@ -119,6 +122,22 @@ var getWRS2Code = function(sceneid){
   var wrs2code = sceneid.substr(3,6)
 
   return wrs2code;
+}
+
+var getWRSPath = function(sceneid){
+
+  //get wrs to code for filter the scene's shape
+  var WRSPath = sceneid.substr(3,3)
+
+  return WRSPath;
+}
+
+var getWRSRow = function(sceneid){
+
+  //get wrs to code for filter the scene's shape
+  var WRSRow = sceneid.substr(6,3)
+
+  return WRSRow;
 }
 
 var createBinaryString = function(nMask) {
@@ -500,36 +519,48 @@ var createStatisticsGrid = function(field){
   var aggregated = turf.aggregate(grid_GeoJSON, fc, aggregations);
 
   console.log("  Fixing nulls for " + field);
-  var aggregated = fixNulls(aggregated);
+  var aggregatedRet = fixNulls(aggregated);
 
   console.log("  Writing grid " + field);
-  writeFile (outdirectory,sceneid,field + '_grid_values',aggregated);
+  writeFile (outdirectory,sceneid,field + '_grid_values',aggregatedRet);
 
   var et = new Date().getTime();
   var t = et - st;
   var tm = msToTime(t);
   console.log("Completed "  + field + " in " + tm);
 
-  return aggregated;
+  return aggregatedRet;
 }
 
 //create an isoline geojson file
-var createIsoLines = function(aggregate,field){
-  var breaks = turf.jenks(aggregate, 'average', 10);
-  var isoline = turf.isolines(fc, field, 25, breaks);
+var createIsoLines = function(pnts,field){
+  var breaks = turf.jenks(pnts, field, 10);
+  var isoline = turf.isolines(pnts, field, 10, breaks);
   writeFile (outdirectory,sceneid, field + '_isolines',isoline);
 
   return isoline;
 }
 
 //create an isoband geojson file
-var createIsoBands = function(aggregate,field){
-  var breaks = turf.jenks(aggregate, 'average', 10);
-  var isoband = turf_isobands(fc, field, 25, breaks);
+var createIsoBands = function(pnts,field){
+  var breaks = turf.jenks(pnts, field, 10);
+  var isoband = turf_isobands(pnts, field, 10, breaks);
   writeFile (outdirectory,sceneid, field + '_isobands',isoband);
 
   return isoband;
 }
+//get the geojson for all scenes...
+console.log('Getting Scene info');
+var wrs2 = fs.readFileSync("wrs2codes.geojson");
+wrs2 = JSON.parse(wrs2);
+
+//get the wrs2code from the scene id
+var wrs2code = getWRS2Code(sceneid);
+var WRSRow = getWRSRow(sceneid);
+var WRSPath = getWRSPath(sceneid);
+
+
+console.log(wrs2code + '--' + WRSPath + '--' + WRSRow);
 
 //get GDAL dataset for bands
 var cloudDS = getGDALdataset(indirectory + sceneid + "/" + sceneid + "_"+ getBandEnder('cloud') + ".TIF");
@@ -553,14 +584,6 @@ var tir2Pixels = getGDALPixels(tir2DS);
 var redPixels = getGDALPixels(redDS);
 var greenPixels = getGDALPixels(greenDS);
 var bluePixels = getGDALPixels(blueDS);
-
-//get the geojson for all scenes...
-console.log('Getting Scene info');
-var wrs2 = fs.readFileSync("wrs2codes.geojson");
-wrs2 = JSON.parse(wrs2);
-
-//get the wrs2code from the scene id
-var wrs2code = getWRS2Code(sceneid);
 
 //extract geojson for the indivual scene
 var wrs2Scene = turf.filter(wrs2,'wrs2_code',wrs2code.toString());
@@ -645,9 +668,9 @@ console.log('Generating statistics');
 var Stats_startTime = new Date().getTime();
 var Stats_endTime;
 
-var ndmi_aggregated = createStatisticsGrid('ndmi')
-var ndvi_aggregated = createStatisticsGrid('ndvi')
-var swir_aggregated = createStatisticsGrid('swir')
+createStatisticsGrid('ndmi')
+createStatisticsGrid('ndvi')
+createStatisticsGrid('swir')
 
 Stats_endTime = new Date().getTime();
 var Stats_Time = Stats_endTime - Stats_startTime;
@@ -659,15 +682,15 @@ console.log();
 
 //create isolines
 console.log('Make Isolines');
-createIsoLines(ndmi_aggregated, 'ndmi');
-createIsoLines(ndvi_aggregated, 'ndvi');
-createIsoLines(swir_aggregated, 'swir');
+createIsoLines(fc, 'ndmi');
+createIsoLines(fc, 'ndvi');
+createIsoLines(fc, 'swir');
 
 //create isobands
 console.log('Make Isobands');
-createIsoBands(ndmi_aggregated, 'ndmi');
-createIsoBands(ndvi_aggregated, 'ndvi');
-createIsoBands(swir_aggregated, 'swir');
+createIsoBands(fc, 'ndmi');
+createIsoBands(fc, 'ndvi');
+createIsoBands(fc, 'swir');
 
 total_endTime = new Date().getTime();
 var total_Time = total_endTime - total_startTime;
