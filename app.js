@@ -133,7 +133,6 @@ var addSatisticFields = function(gridData){
 var transformPtWGS = function(dataset,x,y){
   var srs = dataset.srs.toWKT();
 
-  console.log(srs);
   //transform wgs84 point to pixel location
   //pass dataset to use dataset projection
   var transform = new gdal.CoordinateTransformation(gdal.SpatialReference.fromWKT(srs),gdal.SpatialReference.fromEPSG(4326));
@@ -158,14 +157,22 @@ var transformPt = function(dataset,x,y){
 //use gdal to get value of pixel at a Coordinate
 var getPixelValue = function(dataset,pixels,x,y){
 
-  //transform wgs84 point to pixel location
-  var ptnew = transformPt(dataset,x,y)
 
-  //get change value of point
-  //var pixels = getGDALPixels(dataset)
-  var value = pixels.get(ptnew.x,ptnew.y);
+  try {
+    //transform wgs84 point to pixel location
+    var ptnew = transformPt(dataset,x,y)
 
-  return value;
+    //get change value of point
+    //var pixels = getGDALPixels(dataset)
+    var value = pixels.get(ptnew.x,ptnew.y);
+
+    return value;
+
+  }
+  catch (err) {
+        return 0;
+  }
+
 }
 
 var getCenterPts = function(grid){
